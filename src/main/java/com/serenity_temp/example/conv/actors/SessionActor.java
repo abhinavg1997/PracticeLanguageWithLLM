@@ -21,6 +21,7 @@ public class SessionActor extends AbstractBehavior<Messages.Msg> {
     private String targetLang;
     private final List<Messages.ChatTurn> history;
     private ActorRef<ConsoleActor.Command> console;
+    private boolean languageValidated = false;
 
     private SessionActor(ActorContext<Messages.Msg> ctx, ActorRef<Object> llmClient) {
         super(ctx);
@@ -32,7 +33,7 @@ public class SessionActor extends AbstractBehavior<Messages.Msg> {
     public Receive<Messages.Msg> createReceive() {
         return newReceiveBuilder()
             .onMessage(Messages.Start.class, this::onStart)
-            .onMessage(Messages.ChooseLanguage.class, this::onChoose)
+            .onMessage(Messages.LanguageValidationResult.class, this::onLanguageValidationResult)
             .onMessage(Messages.UserInput.class, this::onUser)
             .onMessage(Messages.LlmReply.class, this::onLlmReply)
             .onMessage(Messages.LlmError.class, this::onLlmError)
@@ -48,27 +49,23 @@ public class SessionActor extends AbstractBehavior<Messages.Msg> {
         return this;
     }
 
-    private Behavior<Messages.Msg> onChoose(Messages.ChooseLanguage m) {
-        this.console = m.console;
-        this.targetLang = m.targetLang();
-        history.add(new Messages.ChatTurn("system", 
-            "You are a helpful assistant. Always reply in " + targetLang + "."));
-        
-        console.tell(new ConsoleActor.Print("[DEBUG] Language chosen: " + targetLang));
-        console.tell(new ConsoleActor.Print("[DEBUG] Sending initial hello to LLM..."));
-        
-        history.add(new Messages.ChatTurn("user", "Hello!"));
-        requestLlm("Hello!");
-        return this;
-    }
+
 
     private Behavior<Messages.Msg> onUser(Messages.UserInput m) {
         this.console = m.console;
-        if (targetLang == null) {
-            console.tell(new ConsoleActor.Print("Please choose a language first."));
-            console.tell(new ConsoleActor.Prompt("> "));
+        
+        if (!languageValidated) {
+            // Treat input as language selection
+            String candidateLanguage = m.text();
+            console.tell(new ConsoleActor.Print("[VALIDATION] Checking if '" + candidateLanguage + "' is supported..."));
+            
+            // Send validation request to LLM
+            ActorRef<Messages.Msg> replyTo = getContext().getSelf();
+            llmClient.tell(new LlmClientActor.ValidateLanguage(candidateLanguage, replyTo, console));
             return this;
         }
+        
+        // Language already validated - handle as normal conversation
         history.add(new Messages.ChatTurn("user", m.text()));
         requestLlm(m.text());
         return this;
@@ -81,6 +78,31 @@ public class SessionActor extends AbstractBehavior<Messages.Msg> {
         llmClient.tell(new LlmClientActor.Generate(req, replyTo, console));
     }
 
+    private Behavior<Messages.Msg> onLanguageValidationResult(Messages.LanguageValidationResult result) {
+        this.console = result.console;
+        
+        if (result.isValid()) {
+            // Language is valid - proceed with setup
+            this.targetLang = result.language();
+            this.languageValidated = true;
+            history.clear(); // Clear any previous history
+            history.add(new Messages.ChatTurn("system", 
+                "You are a helpful assistant. Always reply in " + targetLang + "."));
+            
+            console.tell(new ConsoleActor.Print("[SUCCESS] Language '" + targetLang + "' confirmed. Starting conversation..."));
+            
+            // Send initial hello
+            history.add(new Messages.ChatTurn("user", "Hello!"));
+            requestLlm("Hello!");
+        } else {
+            // Language is invalid - ask again
+            console.tell(new ConsoleActor.Print("[ERROR] " + result.reason()));
+            console.tell(new ConsoleActor.Print("Please try another language (e.g., spanish, french, german, english):"));
+            console.tell(new ConsoleActor.Prompt("Lang> "));
+        }
+        
+        return this;
+    }
     private Behavior<Messages.Msg> onLlmReply(Messages.LlmReply r) {
         this.console = r.console;
         history.add(new Messages.ChatTurn("assistant", r.text()));

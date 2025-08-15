@@ -55,7 +55,6 @@ public class ConsoleActor extends AbstractBehavior<ConsoleActor.Command> {
     }
     
     private Behavior<Command> onPrint(Print cmd) {
-        System.out.println("[DEBUG] ConsoleActor printing: " + cmd.message);
         if (cmd.newLine) {
             System.out.println(cmd.message);
         } else {

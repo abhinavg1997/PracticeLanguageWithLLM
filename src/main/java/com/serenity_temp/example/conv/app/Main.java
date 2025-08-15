@@ -23,39 +23,30 @@ public class Main {
                 // Create the console actor first
                 ActorRef<ConsoleActor.Command> console = 
                     ctx.spawn(ConsoleActor.create(), "console");
-                
+
                 // Make it available to main thread
                 consoleFuture.complete(console);
-                
-                // Create other actors
+
+                // Create other actors inside setup
                 ActorRef<Object> llm = ctx.spawn(LlmClientActor.create(), "llm");
-                // Initial output through console actor
-                console.tell(new ConsoleActor.Print("[CLI] Starting conversation system..."));
-                console.tell(new ConsoleActor.Print("[CLI] Conversation started. Enter language code (e.g., es, fr, de):"));
-                
+
+                // Root behavior is the session
                 return SessionActor.create(llm);
             }),
             "conv-system"
         );
-
         try {
             // Get the console actor reference
-            System.out.println("[DIRECT] Getting console actor reference...");
             ActorRef<ConsoleActor.Command> console = consoleFuture.get(5, TimeUnit.SECONDS);
-            System.out.println("[DIRECT] Console actor reference obtained");
-            // Send start message with console reference
-            System.out.println("[DIRECT] Sending Start message...");
             system.tell(new Messages.Start(console));
             
             // Allow time for initialization
             Thread.sleep(100);
             
             try (Scanner sc = new Scanner(System.in)) {
-                String lang = sc.nextLine().trim();
-                system.tell(new Messages.ChooseLanguage(lang, console));
-                
+                // Start with language selection - SessionActor will prompt
                 while (sc.hasNextLine()) {
-                    String line = sc.nextLine();
+                    String line = sc.nextLine().trim();
                     if (line.equalsIgnoreCase("exit") || line.equalsIgnoreCase("quit")) {
                         break;
                     }
@@ -72,4 +63,6 @@ public class Main {
             system.terminate();
         }
     }
+
+    
 }

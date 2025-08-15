@@ -27,7 +27,21 @@ public final class Messages {
         }
         public String targetLang() { return targetLang; }
     }
-
+    public static final class LanguageValidationResult implements Msg {
+        private final String language;
+        private final boolean isValid;
+        private final String reason;
+        public final ActorRef<ConsoleActor.Command> console;
+        public LanguageValidationResult(String language, boolean isValid, String reason, ActorRef<ConsoleActor.Command> console) {
+            this.language = Objects.requireNonNull(language);
+            this.isValid = isValid;
+            this.reason = reason;
+            this.console = console;
+        }
+        public String language() { return language; }
+        public boolean isValid() { return isValid; }
+        public String reason() { return reason; }
+    }
     public static final class UserInput implements Msg {
         private final String text;
         public final ActorRef<ConsoleActor.Command> console;
@@ -58,6 +72,8 @@ public final class Messages {
         public String reason() { return reason; }
     }
 
+
+
     // Value types remain the same
     public static final class ChatTurn {
         private final String role;
@@ -83,4 +99,8 @@ public final class Messages {
         public List<ChatTurn> history() { return history; }
         public String latestUser() { return latestUser; }
     }
+
+   
+    
+
 }
